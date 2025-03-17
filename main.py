@@ -34,4 +34,12 @@ def pegar_anuncio_adsterra():
             data = response.json()
             if data and isinstance(data, list) and len(data) > 0:
                 return data[0].get("url", None), data[0].get("title", "Anúncio")
+            else:
+                return None, None
+        else:
+            print(f"Erro ao buscar anúncio: {response.status_code}, {response.text}")
+            return None, None
+    except Exception as e:  # ADICIONE ESTE except PARA EVITAR O ERRO DE SYNTAXE
+        print(f"Erro na requisição da Adsterra: {str(e)}")
+        return None, None  # Retorno para evitar erro de sintaxe
        
