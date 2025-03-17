@@ -42,4 +42,8 @@ def pegar_anuncio_adsterra():
     except Exception as e:  # ADICIONE ESTE except PARA EVITAR O ERRO DE SYNTAXE
         print(f"Erro na requisição da Adsterra: {str(e)}")
         return None, None  # Retorno para evitar erro de sintaxe
+        import time
+while True:
+    time.sleep(86400)  # Mantém o script rodando sem consumir CPU
+
        
