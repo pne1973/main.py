@@ -41,8 +41,13 @@ def pegar_anuncio_adsterra():
             return None, None
 
 # /start command
-@telebot.TeleBot(TOKEN)
+@bot.message_handler(commands=["start"])
 def send_welcome(message):
+    user_id = message.chat.id
+    cursor.execute("INSERT OR IGNORE INTO users (id, balance) VALUES (?, ?)", (user_id, 0))
+    conn.commit()
+    bot.send_message(user_id, "Olá! Bem-vindo ao bot de anúncios pagos. Use /watch para começar a ganhar dinheiro assistindo a anúncios.")
+
     user_id = message.chat.id
     cursor.execute("INSERT OR IGNORE INTO users (id, balance) VALUES (?, ?)", (user_id, 0))
     conn.commit()
