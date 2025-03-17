@@ -82,9 +82,4 @@ bot.polling()
 
 ---
 
-### **2️⃣ Configurar o Deploy no Render**
-Agora que o código está corrigido, siga os próximos passos:
 
-1. **No Render**, clique no seu serviço **TelegramAdBot**.
-2. Vá até a aba **"Settings"** → Encontre a seção **"Build & Deploy"**.
-3. Em **"Build Command"**, altere para:  
