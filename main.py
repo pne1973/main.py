@@ -39,7 +39,6 @@ def pegar_anuncio_adsterra():
         else:
             print(f"Erro ao buscar anúncio: {response.status_code}, {response.text}")
             return None, None
-
 # /start command
 @bot.message_handler(commands=["start"])
 def send_welcome(message):
