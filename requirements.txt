@@ -1,4 +1,2 @@
-pyTelegramBotAPI
-requests
-
-
+python-telegram-bot==20.7
+supabase==2.3.4
