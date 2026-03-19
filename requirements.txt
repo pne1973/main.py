@@ -1,2 +1,2 @@
 python-telegram-bot==20.7
-git+https://github.com/supabase-community/supabase-py.git@master
+supabase==2.4.0
