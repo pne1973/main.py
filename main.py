@@ -1,24 +1,35 @@
 import os
+import requests
 from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
-from supabase import create_client, Client
 
-# Variáveis de ambiente
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_ANON_KEY = os.getenv("SUPABASE_ANON_KEY")
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 
-# Criar cliente Supabase
-supabase: Client = create_client(SUPABASE_URL, SUPABASE_ANON_KEY)
+HEADERS = {
+    "apikey": SUPABASE_ANON_KEY,
+    "Authorization": f"Bearer {SUPABASE_ANON_KEY}",
+    "Content-Type": "application/json"
+}
 
 # /start
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
 
-    result = supabase.table("users").select("*").eq("id", user_id).execute()
+    # Verificar se existe
+    r = requests.get(
+        f"{SUPABASE_URL}/rest/v1/users?id=eq.{user_id}",
+        headers=HEADERS
+    )
 
-    if not result.data:
-        supabase.table("users").insert({"id": user_id, "coins": 0}).execute()
+    if r.json() == []:
+        # Criar utilizador
+        requests.post(
+            f"{SUPABASE_URL}/rest/v1/users",
+            headers=HEADERS,
+            json={"id": user_id, "coins": 0}
+        )
         await update.message.reply_text("Conta criada! Bem‑vindo ao Miner Clicker.")
     else:
         await update.message.reply_text("Bem‑vindo de volta ao Miner Clicker.")
@@ -27,15 +38,23 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def mine(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
 
-    result = supabase.table("users").select("*").eq("id", user_id).execute()
+    r = requests.get(
+        f"{SUPABASE_URL}/rest/v1/users?id=eq.{user_id}",
+        headers=HEADERS
+    )
 
-    if not result.data:
+    data = r.json()
+    if data == []:
         await update.message.reply_text("Ainda não tens conta. Usa /start primeiro.")
         return
 
-    coins = result.data[0]["coins"] + 1
+    coins = data[0]["coins"] + 1
 
-    supabase.table("users").update({"coins": coins}).eq("id", user_id).execute()
+    requests.patch(
+        f"{SUPABASE_URL}/rest/v1/users?id=eq.{user_id}",
+        headers=HEADERS,
+        json={"coins": coins}
+    )
 
     await update.message.reply_text(f"Minaste 1 moeda! Total: {coins}")
 
