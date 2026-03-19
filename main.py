@@ -1,11 +1,12 @@
-import os
+import telebot
 import requests
-from telegram import Update
-from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
+import os
 
+BOT_TOKEN = os.getenv("BOT_TOKEN")
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_ANON_KEY = os.getenv("SUPABASE_ANON_KEY")
-BOT_TOKEN = os.getenv("BOT_TOKEN")
+
+bot = telebot.TeleBot(BOT_TOKEN)
 
 HEADERS = {
     "apikey": SUPABASE_ANON_KEY,
@@ -14,29 +15,29 @@ HEADERS = {
 }
 
 # /start
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_user.id
+@bot.message_handler(commands=['start'])
+def start(message):
+    user_id = message.from_user.id
 
-    # Verificar se existe
     r = requests.get(
         f"{SUPABASE_URL}/rest/v1/users?id=eq.{user_id}",
         headers=HEADERS
     )
 
     if r.json() == []:
-        # Criar utilizador
         requests.post(
             f"{SUPABASE_URL}/rest/v1/users",
             headers=HEADERS,
             json={"id": user_id, "coins": 0}
         )
-        await update.message.reply_text("Conta criada! Bem‑vindo ao Miner Clicker.")
+        bot.reply_to(message, "Conta criada! Bem‑vindo ao Miner Clicker.")
     else:
-        await update.message.reply_text("Bem‑vindo de volta ao Miner Clicker.")
+        bot.reply_to(message, "Bem‑vindo de volta ao Miner Clicker.")
 
 # /mine
-async def mine(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_user.id
+@bot.message_handler(commands=['mine'])
+def mine(message):
+    user_id = message.from_user.id
 
     r = requests.get(
         f"{SUPABASE_URL}/rest/v1/users?id=eq.{user_id}",
@@ -45,7 +46,7 @@ async def mine(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     data = r.json()
     if data == []:
-        await update.message.reply_text("Ainda não tens conta. Usa /start primeiro.")
+        bot.reply_to(message, "Ainda não tens conta. Usa /start primeiro.")
         return
 
     coins = data[0]["coins"] + 1
@@ -56,13 +57,7 @@ async def mine(update: Update, context: ContextTypes.DEFAULT_TYPE):
         json={"coins": coins}
     )
 
-    await update.message.reply_text(f"Minaste 1 moeda! Total: {coins}")
+    bot.reply_to(message, f"Minaste 1 moeda! Total: {coins}")
 
-def main():
-    app = ApplicationBuilder().token(BOT_TOKEN).build()
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("mine", mine))
-    app.run_polling()
-
-if __name__ == "__main__":
-    main()
+# Iniciar bot
+bot.infinity_polling()
