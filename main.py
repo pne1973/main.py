@@ -3,6 +3,8 @@ import requests
 import os
 from flask import Flask
 import threading
+import time
+from datetime import datetime, timedelta
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 SUPABASE_URL = os.getenv("SUPABASE_URL")
@@ -17,117 +19,126 @@ HEADERS = {
     "Content-Type": "application/json"
 }
 
-@app.route("/")
-def home():
-    return "Bot is running!"
-
 # -------------------------
-# MENU PRINCIPAL
+# DATABASE HELPERS
 # -------------------------
 
-def menu_principal(chat_id):
+def get_user(user_id):
+    r = requests.get(
+        f"{SUPABASE_URL}/rest/v1/users?id=eq.{user_id}",
+        headers=HEADERS
+    )
+    data = r.json()
+    return data[0] if data else None
+
+def update_user(user_id, fields):
+    requests.patch(
+        f"{SUPABASE_URL}/rest/v1/users?id=eq.{user_id}",
+        headers=HEADERS,
+        json=fields
+    )
+
+def create_user(user_id):
+    user = {
+        "id": user_id,
+        "coins": 0,
+        "gems": 0,
+        "click_power": 1,
+        "auto_mine": 0,
+        "last_auto_mine": datetime.utcnow().isoformat(),
+        "energy": 20,
+        "max_energy": 20,
+        "level": 1,
+        "xp": 0,
+        "total_mined": 0
+    }
+    requests.post(
+        f"{SUPABASE_URL}/rest/v1/users",
+        headers=HEADERS,
+        json=user
+    )
+    return user
+
+# -------------------------
+# MAIN MENU
+# -------------------------
+
+def main_menu(chat_id):
     markup = telebot.types.InlineKeyboardMarkup()
 
-    btn_mine = telebot.types.InlineKeyboardButton("⛏️ Minerar", callback_data="mine")
-    btn_shop = telebot.types.InlineKeyboardButton("🛒 Loja", callback_data="shop")
-    btn_profile = telebot.types.InlineKeyboardButton("📊 Perfil", callback_data="profile")
-    btn_rank = telebot.types.InlineKeyboardButton("🏆 Ranking", callback_data="rank")
-    btn_upgrades = telebot.types.InlineKeyboardButton("⚙️ Upgrades", callback_data="upgrades")
+    markup.add(telebot.types.InlineKeyboardButton("⛏️ Mine", callback_data="mine"))
+    markup.add(telebot.types.InlineKeyboardButton("🛒 Shop", callback_data="shop"))
+    markup.add(telebot.types.InlineKeyboardButton("⚙️ Upgrades", callback_data="upgrades"))
+    markup.add(telebot.types.InlineKeyboardButton("📊 Profile", callback_data="profile"))
+    markup.add(telebot.types.InlineKeyboardButton("🏆 Ranking", callback_data="ranking"))
+    markup.add(telebot.types.InlineKeyboardButton("🎁 Rewards", callback_data="rewards"))
 
-    markup.add(btn_mine)
-    markup.add(btn_shop)
-    markup.add(btn_profile)
-    markup.add(btn_rank)
-    markup.add(btn_upgrades)
-
-    bot.send_message(chat_id, "⛏️ *Miner Clicker*\nEscolhe uma opção:", parse_mode="Markdown", reply_markup=markup)
+    bot.send_message(chat_id, "⛏️ *Miner Clicker*\nChoose an option:", parse_mode="Markdown", reply_markup=markup)
 
 # -------------------------
-# START
+# START COMMAND
 # -------------------------
 
 @bot.message_handler(commands=['start'])
 def start(message):
     user_id = message.from_user.id
+    user = get_user(user_id)
 
-    r = requests.get(
-        f"{SUPABASE_URL}/rest/v1/users?id=eq.{user_id}",
-        headers=HEADERS
-    )
-
-    if r.json() == []:
-        requests.post(
-            f"{SUPABASE_URL}/rest/v1/users",
-            headers=HEADERS,
-            json={"id": user_id, "coins": 0}
-        )
-        bot.reply_to(message, "Conta criada! Bem‑vindo ao Miner Clicker.")
+    if not user:
+        create_user(user_id)
+        bot.reply_to(message, "Account created! Welcome to Miner Clicker.")
     else:
-        bot.reply_to(message, "Bem‑vindo de volta ao Miner Clicker.")
+        bot.reply_to(message, "Welcome back to Miner Clicker!")
 
-    menu_principal(message.chat.id)
-
-# -------------------------
-# CALLBACKS DO MENU
-# -------------------------
-
-@bot.callback_query_handler(func=lambda call: True)
-def callback(call):
-    if call.data == "mine":
-        bot.answer_callback_query(call.id)
-        bot.send_message(call.message.chat.id, "⛏️ A minerar... envia /mine para ganhar moedas.")
-
-    elif call.data == "shop":
-        bot.answer_callback_query(call.id)
-        bot.send_message(call.message.chat.id, "🛒 A loja ainda está em construção.")
-
-    elif call.data == "profile":
-        bot.answer_callback_query(call.id)
-        bot.send_message(call.message.chat.id, "📊 O teu perfil será mostrado aqui.")
-
-    elif call.data == "rank":
-        bot.answer_callback_query(call.id)
-        bot.send_message(call.message.chat.id, "🏆 O ranking será adicionado em breve.")
-
-    elif call.data == "upgrades":
-        bot.answer_callback_query(call.id)
-        bot.send_message(call.message.chat.id, "⚙️ Os upgrades estão a caminho!")
+    main_menu(message.chat.id)
 
 # -------------------------
-# MINERAR
+# MINING
 # -------------------------
+
+@bot.callback_query_handler(func=lambda call: call.data == "mine")
+def mine_button(call):
+    bot.answer_callback_query(call.id)
+    mine(call.message)
 
 @bot.message_handler(commands=['mine'])
 def mine(message):
     user_id = message.from_user.id
+    user = get_user(user_id)
 
-    r = requests.get(
-        f"{SUPABASE_URL}/rest/v1/users?id=eq.{user_id}",
-        headers=HEADERS
-    )
-
-    data = r.json()
-    if data == []:
-        bot.reply_to(message, "Ainda não tens conta. Usa /start primeiro.")
+    if not user:
+        bot.reply_to(message, "You don't have an account yet. Use /start first.")
         return
 
-    coins = data[0]["coins"] + 1
+    if user["energy"] <= 0:
+        bot.reply_to(message, "⚡ You are out of energy! Wait for regeneration.")
+        return
 
-    requests.patch(
-        f"{SUPABASE_URL}/rest/v1/users?id=eq.{user_id}",
-        headers=HEADERS,
-        json={"coins": coins}
-    )
+    new_coins = user["coins"] + user["click_power"]
+    new_energy = user["energy"] - 1
+    new_total = user["total_mined"] + user["click_power"]
 
-    bot.reply_to(message, f"⛏️ Minaste 1 moeda! Total: {coins}")
+    update_user(user_id, {
+        "coins": new_coins,
+        "energy": new_energy,
+        "total_mined": new_total
+    })
+
+    bot.reply_to(message, f"⛏️ You mined {user['click_power']} coins!\n💰 Total: {new_coins}")
 
 # -------------------------
-# THREADS
+# PROFILE
 # -------------------------
 
-def start_bot():
-    bot.infinity_polling()
+@bot.callback_query_handler(func=lambda call: call.data == "profile")
+def profile(call):
+    bot.answer_callback_query(call.id)
+    user = get_user(call.from_user.id)
 
-if __name__ == "__main__":
-    threading.Thread(target=start_bot).start()
-    app.run(host="0.0.0.0", port=10000)
+    text = (
+        f"📊 *Your Profile*\n\n"
+        f"💰 Coins: {user['coins']}\n"
+        f"💎 Gems: {user['gems']}\n"
+        f"⛏️ Click Power: {user['click_power']}\n"
+        f"🤖 Auto-Mine: {user['auto_mine']} / min\n"
+        f"⚡ Energy: {user['energy']} / {user['max_energy']}\
