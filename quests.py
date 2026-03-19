@@ -1,5 +1,5 @@
 from datetime import datetime, timedelta
-from database import db_get, db_insert, update_user
+from database import db_get, db_insert, db_update
 from player import Player
 
 # -------------------------
@@ -9,7 +9,7 @@ from player import Player
 DAILY_QUESTS = [
     {"id": "d_mine_50", "desc": "Mine 50 times", "goal": 50, "reward": 100},
     {"id": "d_energy_20", "desc": "Spend 20 energy", "goal": 20, "reward": 80},
-    {"id": "d_auto_10", "desc": "Earn 10 auto-mine ticks", "goal": 10, "reward": 120},
+    {"id": "d_auto_10", "desc": "Trigger auto-mine 10 times", "goal": 10, "reward": 120},
 ]
 
 WEEKLY_QUESTS = [
@@ -23,9 +23,16 @@ PROGRESSION_QUESTS = [
     {"id": "p_lvl_20", "desc": "Reach level 20", "goal": 20, "reward": 1000},
 ]
 
+ALL_QUESTS = DAILY_QUESTS + WEEKLY_QUESTS + PROGRESSION_QUESTS
+
+
 # -------------------------
-# QUEST STORAGE
+# HELPERS
 # -------------------------
+
+def _find_quest_def(quest_id):
+    return next((q for q in ALL_QUESTS if q["id"] == quest_id), None)
+
 
 def get_user_quests(user_id):
     data = db_get("quests", f"?user_id=eq.{user_id}")
@@ -44,25 +51,24 @@ def add_quest(user_id, quest_id, quest_type):
     })
 
 
+# -------------------------
+# ASSIGNMENT
+# -------------------------
+
 def assign_daily_quests(user_id):
     today = datetime.utcnow().date()
-
-    data = db_get("users", f"?id=eq.{user_id}&select=last_daily")
+    user = db_get("users", f"?id=eq.{user_id}&select=last_daily")
 
     last_daily = None
-    if data and data[0]["last_daily"]:
-        last_daily = datetime.fromisoformat(data[0]["last_daily"]).date()
+    if user and user[0].get("last_daily"):
+        last_daily = datetime.fromisoformat(user[0]["last_daily"]).date()
 
     if last_daily == today:
-        return  # already assigned
+        return
 
-    # reset old daily quests
-    update_user(user_id, {"last_daily": today.isoformat()})
+    db_update("users", f"id=eq.{user_id}", {"last_daily": today.isoformat()})
 
-    # remove old daily quests
-    # (optional: keep history)
-    # but for simplicity, delete
-    # you can implement soft-delete later
+    # opcional: limpar diárias antigas
     # db_delete("quests", f"?user_id=eq.{user_id}&quest_type=eq.daily")
 
     for q in DAILY_QUESTS:
@@ -71,18 +77,18 @@ def assign_daily_quests(user_id):
 
 def assign_weekly_quests(user_id):
     today = datetime.utcnow().date()
-    week_start = today - timedelta(days=today.weekday())  # Monday
+    week_start = today - timedelta(days=today.weekday())  # segunda
 
-    data = db_get("users", f"?id=eq.{user_id}&select=last_weekly")
+    user = db_get("users", f"?id=eq.{user_id}&select=last_weekly")
 
     last_weekly = None
-    if data and data[0]["last_weekly"]:
-        last_weekly = datetime.fromisoformat(data[0]["last_weekly"]).date()
+    if user and user[0].get("last_weekly"):
+        last_weekly = datetime.fromisoformat(user[0]["last_weekly"]).date()
 
     if last_weekly == week_start:
         return
 
-    update_user(user_id, {"last_weekly": week_start.isoformat()})
+    db_update("users", f"id=eq.{user_id}", {"last_weekly": week_start.isoformat()})
 
     for q in WEEKLY_QUESTS:
         add_quest(user_id, q["id"], "weekly")
@@ -97,98 +103,6 @@ def assign_progression_quests(user_id):
             add_quest(user_id, q["id"], "progression")
 
 
-# -------------------------
-# QUEST PROGRESS
-# -------------------------
-
-def update_quest_progress(user_id, quest_id, amount):
-    quests = get_user_quests(user_id)
-
-    for q in quests:
-        if q["quest_id"] == quest_id and not q["completed"]:
-            new_progress = q["progress"] + amount
-
-            # find quest definition
-            all_quests = DAILY_QUESTS + WEEKLY_QUESTS + PROGRESSION_QUESTS
-            quest_def = next((x for x in all_quests if x["id"] == quest_id), None)
-
-            if not quest_def:
-                return
-
-            if new_progress >= quest_def["goal"]:
-                update_user(user_id, {"quests": None})  # placeholder
-                q["progress"] = quest_def["goal"]
-                q["completed"] = True
-            else:
-                q["progress"] = new_progress
-
-            update_user(user_id, {
-                "quests": None  # placeholder to trigger sync
-            })
-
-
-# -------------------------
-# CLAIM REWARD
-# -------------------------
-
-def claim_quest(user_id, quest_id):
-    quests = get_user_quests(user_id)
-
-    for q in quests:
-        if q["quest_id"] == quest_id:
-
-            if not q["completed"]:
-                return "❌ Quest not completed yet."
-
-            if q["claimed"]:
-                return "❌ Reward already claimed."
-
-            # find quest definition
-            all_quests = DAILY_QUESTS + WEEKLY_QUESTS + PROGRESSION_QUESTS
-            quest_def = next((x for x in all_quests if x["id"] == quest_id), None)
-
-            if not quest_def:
-                return "❌ Quest not found."
-
-            reward = quest_def["reward"]
-
-            player = Player(user_id)
-            player.add_coins(reward)
-
-            q["claimed"] = True
-
-            update_user(user_id, {"quests": None})
-
-            return f"🎉 Quest completed! You received {reward} coins."
-
-    return "❌ Quest not found."
-
-
-# -------------------------
-# QUEST MENU
-# -------------------------
-
-def quest_menu_text(user_id):
+def ensure_quests_assigned(user_id):
     assign_daily_quests(user_id)
-    assign_weekly_quests(user_id)
-    assign_progression_quests(user_id)
-
-    quests = get_user_quests(user_id)
-
-    text = "📜 *Your Quests*\n\n"
-
-    for q in quests:
-        # find definition
-        all_quests = DAILY_QUESTS + WEEKLY_QUESTS + PROGRESSION_QUESTS
-        quest_def = next((x for x in all_quests if x["id"] == q["quest_id"]), None)
-
-        if not quest_def:
-            continue
-
-        status = "✅ Completed" if q["completed"] else f"{q['progress']}/{quest_def['goal']}"
-
-        text += f"- *{quest_def['desc']}* ({q['quest_type']})\n"
-        text += f"  Progress: {status}\n"
-        text += f"  Reward: {quest_def['reward']} coins\n\n"
-
-    return text
+    assign_weekly_quests(user_id
