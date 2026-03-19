@@ -1,144 +1,129 @@
 import telebot
-import requests
-import os
-from flask import Flask
 import threading
 import time
-from datetime import datetime, timedelta
 
-BOT_TOKEN = os.getenv("BOT_TOKEN")
-SUPABASE_URL = os.getenv("SUPABASE_URL")
-SUPABASE_ANON_KEY = os.getenv("SUPABASE_ANON_KEY")
+from mining import mine_action
+from profile import profile_text
+from shop import shop_menu, buy_item
+from upgrades import upgrades_menu, upgrade_click_power, upgrade_auto_mine, upgrade_energy
+from rewards import daily_reward
+from inventory import drop_item, show_inventory
+from ranking import global_ranking, weekly_ranking
+from auto_mine import process_auto_mine
+from database import db_get
 
-bot = telebot.TeleBot(BOT_TOKEN)
-app = Flask(__name__)
-
-HEADERS = {
-    "apikey": SUPABASE_ANON_KEY,
-    "Authorization": f"Bearer {SUPABASE_ANON_KEY}",
-    "Content-Type": "application/json"
-}
+TOKEN = "AQUI_O_TELEGRAM_TOKEN"
+bot = telebot.TeleBot(TOKEN)
 
 # -------------------------
-# DATABASE HELPERS
+# COMMANDS
 # -------------------------
 
-def get_user(user_id):
-    r = requests.get(
-        f"{SUPABASE_URL}/rest/v1/users?id=eq.{user_id}",
-        headers=HEADERS
-    )
-    data = r.json()
-    return data[0] if data else None
-
-def update_user(user_id, fields):
-    requests.patch(
-        f"{SUPABASE_URL}/rest/v1/users?id=eq.{user_id}",
-        headers=HEADERS,
-        json=fields
+@bot.message_handler(commands=["start"])
+def start_cmd(message):
+    bot.reply_to(message,
+        "👋 Welcome to *Mining Bot*!\n"
+        "Use /mine to start mining.\n"
+        "Use /profile to see your stats.\n"
+        "Use /shop to buy upgrades.\n"
+        "Use /upgrades for advanced upgrades.\n"
+        "Use /daily for daily rewards.\n"
+        "Use /inventory to see your items.\n"
+        "Use /ranking to see the leaderboard.",
+        parse_mode="Markdown"
     )
 
-def create_user(user_id):
-    user = {
-        "id": user_id,
-        "coins": 0,
-        "gems": 0,
-        "click_power": 1,
-        "auto_mine": 0,
-        "last_auto_mine": datetime.utcnow().isoformat(),
-        "energy": 20,
-        "max_energy": 20,
-        "level": 1,
-        "xp": 0,
-        "total_mined": 0
-    }
-    requests.post(
-        f"{SUPABASE_URL}/rest/v1/users",
-        headers=HEADERS,
-        json=user
-    )
-    return user
+
+@bot.message_handler(commands=["mine"])
+def mine_cmd(message):
+    bot.reply_to(message, mine_action(message.from_user.id))
+
+
+@bot.message_handler(commands=["profile"])
+def profile_cmd(message):
+    bot.reply_to(message, profile_text(message.from_user.id), parse_mode="Markdown")
+
+
+@bot.message_handler(commands=["shop"])
+def shop_cmd(message):
+    bot.reply_to(message, shop_menu(), parse_mode="Markdown")
+
+
+@bot.message_handler(commands=["buy"])
+def buy_cmd(message):
+    try:
+        item_id = int(message.text.split()[1])
+        bot.reply_to(message, buy_item(message.from_user.id, item_id))
+    except:
+        bot.reply_to(message, "Usage: /buy <item_id>")
+
+
+@bot.message_handler(commands=["upgrades"])
+def upgrades_cmd(message):
+    bot.reply_to(message, upgrades_menu(message.from_user.id), parse_mode="Markdown")
+
+
+@bot.message_handler(commands=["upgrade"])
+def upgrade_cmd(message):
+    try:
+        option = int(message.text.split()[1])
+        uid = message.from_user.id
+
+        if option == 1:
+            bot.reply_to(message, upgrade_click_power(uid))
+        elif option == 2:
+            bot.reply_to(message, upgrade_auto_mine(uid))
+        elif option == 3:
+            bot.reply_to(message, upgrade_energy(uid))
+        else:
+            bot.reply_to(message, "Invalid upgrade option.")
+
+    except:
+        bot.reply_to(message, "Usage: /upgrade <1|2|3>")
+
+
+@bot.message_handler(commands=["daily"])
+def daily_cmd(message):
+    bot.reply_to(message, daily_reward(message.from_user.id), parse_mode="Markdown")
+
+
+@bot.message_handler(commands=["inventory"])
+def inventory_cmd(message):
+    bot.reply_to(message, show_inventory(message.from_user.id), parse_mode="Markdown")
+
+
+@bot.message_handler(commands=["drop"])
+def drop_cmd(message):
+    bot.reply_to(message, drop_item(message.from_user.id), parse_mode="Markdown")
+
+
+@bot.message_handler(commands=["ranking"])
+def ranking_cmd(message):
+    bot.reply_to(message, global_ranking(), parse_mode="Markdown")
+
+
+@bot.message_handler(commands=["weekly"])
+def weekly_cmd(message):
+    bot.reply_to(message, weekly_ranking(), parse_mode="Markdown")
+
 
 # -------------------------
-# MAIN MENU
+# AUTO-MINE LOOP
 # -------------------------
 
-def main_menu(chat_id):
-    markup = telebot.types.InlineKeyboardMarkup()
+def auto_mine_loop():
+    while True:
+        users = db_get("users", "?select=id")
+        for user in users:
+            process_auto_mine(user["id"])
+        time.sleep(10)  # check every 10 seconds
 
-    markup.add(telebot.types.InlineKeyboardButton("⛏️ Mine", callback_data="mine"))
-    markup.add(telebot.types.InlineKeyboardButton("🛒 Shop", callback_data="shop"))
-    markup.add(telebot.types.InlineKeyboardButton("⚙️ Upgrades", callback_data="upgrades"))
-    markup.add(telebot.types.InlineKeyboardButton("📊 Profile", callback_data="profile"))
-    markup.add(telebot.types.InlineKeyboardButton("🏆 Ranking", callback_data="ranking"))
-    markup.add(telebot.types.InlineKeyboardButton("🎁 Rewards", callback_data="rewards"))
 
-    bot.send_message(chat_id, "⛏️ *Miner Clicker*\nChoose an option:", parse_mode="Markdown", reply_markup=markup)
+threading.Thread(target=auto_mine_loop, daemon=True).start()
 
 # -------------------------
-# START COMMAND
+# BOT START
 # -------------------------
 
-@bot.message_handler(commands=['start'])
-def start(message):
-    user_id = message.from_user.id
-    user = get_user(user_id)
-
-    if not user:
-        create_user(user_id)
-        bot.reply_to(message, "Account created! Welcome to Miner Clicker.")
-    else:
-        bot.reply_to(message, "Welcome back to Miner Clicker!")
-
-    main_menu(message.chat.id)
-
-# -------------------------
-# MINING
-# -------------------------
-
-@bot.callback_query_handler(func=lambda call: call.data == "mine")
-def mine_button(call):
-    bot.answer_callback_query(call.id)
-    mine(call.message)
-
-@bot.message_handler(commands=['mine'])
-def mine(message):
-    user_id = message.from_user.id
-    user = get_user(user_id)
-
-    if not user:
-        bot.reply_to(message, "You don't have an account yet. Use /start first.")
-        return
-
-    if user["energy"] <= 0:
-        bot.reply_to(message, "⚡ You are out of energy! Wait for regeneration.")
-        return
-
-    new_coins = user["coins"] + user["click_power"]
-    new_energy = user["energy"] - 1
-    new_total = user["total_mined"] + user["click_power"]
-
-    update_user(user_id, {
-        "coins": new_coins,
-        "energy": new_energy,
-        "total_mined": new_total
-    })
-
-    bot.reply_to(message, f"⛏️ You mined {user['click_power']} coins!\n💰 Total: {new_coins}")
-
-# -------------------------
-# PROFILE
-# -------------------------
-
-@bot.callback_query_handler(func=lambda call: call.data == "profile")
-def profile(call):
-    bot.answer_callback_query(call.id)
-    user = get_user(call.from_user.id)
-
-    text = (
-        f"📊 *Your Profile*\n\n"
-        f"💰 Coins: {user['coins']}\n"
-        f"💎 Gems: {user['gems']}\n"
-        f"⛏️ Click Power: {user['click_power']}\n"
-        f"🤖 Auto-Mine: {user['auto_mine']} / min\n"
-        f"⚡ Energy: {user['energy']} / {user['max_energy']}\
+print("Bot is running...")
+bot.infinity_polling()
