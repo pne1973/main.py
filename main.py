@@ -1,12 +1,14 @@
 import telebot
 import requests
 import os
+from flask import Flask
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_ANON_KEY = os.getenv("SUPABASE_ANON_KEY")
 
 bot = telebot.TeleBot(BOT_TOKEN)
+app = Flask(__name__)
 
 HEADERS = {
     "apikey": SUPABASE_ANON_KEY,
@@ -14,7 +16,10 @@ HEADERS = {
     "Content-Type": "application/json"
 }
 
-# /start
+@app.route("/")
+def home():
+    return "Bot is running!"
+
 @bot.message_handler(commands=['start'])
 def start(message):
     user_id = message.from_user.id
@@ -34,7 +39,6 @@ def start(message):
     else:
         bot.reply_to(message, "Bem‑vindo de volta ao Miner Clicker.")
 
-# /mine
 @bot.message_handler(commands=['mine'])
 def mine(message):
     user_id = message.from_user.id
@@ -59,5 +63,7 @@ def mine(message):
 
     bot.reply_to(message, f"Minaste 1 moeda! Total: {coins}")
 
-# Iniciar bot
-bot.infinity_polling()
+if __name__ == "__main__":
+    import threading
+    threading.Thread(target=lambda: bot.infinity_polling()).start()
+    app.run(host="0.0.0.0", port=10000)
