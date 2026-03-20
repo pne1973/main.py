@@ -105,4 +105,4 @@ def assign_progression_quests(user_id):
 
 def ensure_quests_assigned(user_id):
     assign_daily_quests(user_id)
-    assign_weekly_quests(user_id
+    assign_weekly_quests(user_id)
