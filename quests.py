@@ -68,16 +68,13 @@ def assign_daily_quests(user_id):
 
     db_update("users", f"id=eq.{user_id}", {"last_daily": today.isoformat()})
 
-    # opcional: limpar diárias antigas
-    # db_delete("quests", f"?user_id=eq.{user_id}&quest_type=eq.daily")
-
     for q in DAILY_QUESTS:
         add_quest(user_id, q["id"], "daily")
 
 
 def assign_weekly_quests(user_id):
     today = datetime.utcnow().date()
-    week_start = today - timedelta(days=today.weekday())  # segunda
+    week_start = today - timedelta(days=today.weekday())
 
     user = db_get("users", f"?id=eq.{user_id}&select=last_weekly")
 
@@ -106,3 +103,59 @@ def assign_progression_quests(user_id):
 def ensure_quests_assigned(user_id):
     assign_daily_quests(user_id)
     assign_weekly_quests(user_id)
+    assign_progression_quests(user_id)
+
+
+# -------------------------
+# QUEST MENU TEXT
+# -------------------------
+
+def quest_menu_text(user_id):
+    quests = get_user_quests(user_id)
+    if not quests:
+        return "No quests available."
+
+    text = "📜 *Your Quests:*\n\n"
+    for q in quests:
+        qdef = _find_quest_def(q["quest_id"])
+        if not qdef:
+            continue
+
+        status = "✅ Completed" if q["completed"] else f"{q['progress']}/{qdef['goal']}"
+        claimed = "🎁 Claimed" if q["claimed"] else ""
+        text += f"• *{qdef['desc']}* — {status} {claimed}\n"
+
+    return text
+
+
+# -------------------------
+# CLAIM QUEST
+# -------------------------
+
+def claim_quest(user_id, quest_id):
+    quests = get_user_quests(user_id)
+    quest = next((q for q in quests if q["quest_id"] == quest_id), None)
+
+    if not quest:
+        return "Quest not found."
+
+    if not quest["completed"]:
+        return "You haven't completed this quest yet."
+
+    if quest["claimed"]:
+        return "You already claimed this reward."
+
+    qdef = _find_quest_def(quest_id)
+    if not qdef:
+        return "Quest definition missing."
+
+    reward = qdef["reward"]
+
+    user = db_get("users", f"?id=eq.{user_id}")
+    if user:
+        coins = user[0]["coins"] + reward
+        db_update("users", f"id=eq.{user_id}", {"coins": coins})
+
+    db_update("quests", f"id=eq.{quest['id']}", {"claimed": True})
+
+    return f"You claimed {reward} coins!"
